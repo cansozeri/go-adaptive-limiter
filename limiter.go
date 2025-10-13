@@ -66,14 +66,15 @@ func New(opts ...Option) *Limiter {
 func (l *Limiter) Execute(ctx context.Context, fn func() error) error {
 	start := time.Now()
 	var queuedDuration time.Duration
+	var err error
 
 	l.inFlights.Inc()
 	defer func() {
 		currentFlights := l.inFlights.Dec()
 
-		// Measure and adapt limit
+		// Measure and adapt limit based on the execution result
 		if l.policy != nil {
-			result := l.policy(ctx, nil) // Will be updated with actual error
+			result := l.policy(ctx, err)
 			if result != algorithm.ResultIgnore {
 				newLimit := l.alg.MeasureSample(start, queuedDuration, currentFlights, result)
 				l.executor.SetWorkerQuantity(newLimit)
@@ -82,23 +83,13 @@ func (l *Limiter) Execute(ctx context.Context, fn func() error) error {
 	}()
 
 	// Execute with the executor
-	err := l.executor.Execute(ctx, func() error {
+	err = l.executor.Execute(ctx, func() error {
 		queuedDuration = time.Since(start)
 		l.executing.Inc()
 		defer l.executing.Dec()
 
 		return fn()
 	})
-
-	// Update policy with actual error
-	if l.policy != nil {
-		result := l.policy(ctx, err)
-		if result != algorithm.ResultIgnore {
-			currentFlights := int(l.inFlights.c.Load())
-			newLimit := l.alg.MeasureSample(start, queuedDuration, currentFlights, result)
-			l.executor.SetWorkerQuantity(newLimit)
-		}
-	}
 
 	return err
 }
@@ -112,7 +103,6 @@ func ExecuteWithResult[T any](l *Limiter, ctx context.Context, fn func() (T, err
 		result, fnErr = fn()
 		return fnErr
 	})
-
 	if err != nil {
 		var zero T
 		return zero, err
