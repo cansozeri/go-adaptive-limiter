@@ -190,13 +190,13 @@ limiter.WithResultPolicy(limiter.FailureOnRejectedPolicy)
 Benchmarks on Apple M-series processor:
 
 ```
-BenchmarkLimiter-8              838 ns/op    472 B/op     8 allocs/op
-BenchmarkLimiterWithResult-8    969 ns/op    544 B/op    11 allocs/op
-BenchmarkAIMDAlgorithm-8       1077 ns/op    472 B/op     8 allocs/op
-BenchmarkVegasAlgorithm-8      4573 ns/op   1232 B/op    18 allocs/op
+BenchmarkLimiter-8               828 ns/op    472 B/op     8 allocs/op
+BenchmarkLimiterWithResult-8     967 ns/op    544 B/op    11 allocs/op
+BenchmarkAIMDAlgorithm-8         958 ns/op    472 B/op     8 allocs/op
+BenchmarkVegasAlgorithm-8       2364 ns/op    704 B/op    11 allocs/op
 ```
 
-The limiter adds sub-microsecond overhead for AIMD and FIFO configurations.
+The limiter adds sub-microsecond overhead for AIMD and FIFO configurations. Recent optimizations improved Vegas algorithm performance by ~48%.
 
 ## Thread Safety
 
