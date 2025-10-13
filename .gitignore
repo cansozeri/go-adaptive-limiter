@@ -1,0 +1,28 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Example binaries
+examples/*/basic
+examples/*/http
+examples/*/grpc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
