@@ -3,14 +3,12 @@ package executor
 import (
 	"context"
 	"time"
-
-	
 )
 
-// FIFOConfig is the configuration for the FIFO limiter.
+// FIFOConfig is the configuration for the FIFO executor.
 type FIFOConfig struct {
-	// MaxWaitTime is the max time a limiter will wait to execute before
-	// being dropped its execution and be rejected.
+	// MaxWaitTime is the maximum time a request will wait to execute before
+	// being dropped and rejected.
 	MaxWaitTime time.Duration
 }
 
@@ -20,12 +18,12 @@ func (c *FIFOConfig) defaults() {
 	}
 }
 
-// NewFIFO returns a FIFO executor that will execute if there are workers available, if not it will get blocked
-// and queued with FIFO priority until one worker is free or the timeout is reached, in this last
-// case the execution will be treat as rejected.
+// NewFIFO creates a FIFO executor that executes requests when workers are available.
+// If no workers are available, requests are queued with FIFO priority until a worker is free
+// or the timeout is reached, in which case the execution is rejected.
 //
-// The FIFO kind queue is based on internal implementation of Go channels that makes blocked sends to a
-// channel execute in a first-in-first-out priority.
+// The FIFO queue leverages Go's channel implementation which guarantees first-in-first-out
+// ordering for blocked sends.
 func NewFIFO(cfg FIFOConfig) Executor {
 	cfg.defaults()
 

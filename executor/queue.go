@@ -24,7 +24,7 @@ type dynamicQueue struct {
 	dequeuePolicy dequeuePolicy
 	queueStats
 	stopC chan struct{}
-	// wakeupDequeuerC will be use to  wake up the dequeuer that has been sleeping due to no jobs on the queue.
+	// wakeUpDequeuerC will be used to wake up the dequeuer that has been sleeping due to no jobs on the queue.
 	wakeUpDequeuerC chan struct{}
 }
 
@@ -48,7 +48,7 @@ func newDynamicQueue(stopC chan struct{}, enqueuePolicy enqueuePolicy, dequeuePo
 		// at the time of notifying in the enqueue moment.
 		// A drawback is that could happen that the dequeuer gets the buffered signal of an old and already queued element
 		// and in the moment of waking up, the queue is empty, so that's why we need to check again if the queue is empty
-		// just after waiking up the dequeuer.
+		// just after waking up the dequeuer.
 		wakeUpDequeuerC: make(chan struct{}, 1),
 	}
 
@@ -142,7 +142,7 @@ func (d *dynamicQueue) queueIsEmpty() bool {
 	return len(d.jobs) < 1
 }
 
-// Queue Policies.
+// Queue policies.
 // enqueueAtEndPolicy enqueues at the end of the queue.
 var enqueueAtEndPolicy = func(job func(), jobqueue []func()) []func() {
 	return append(jobqueue, job)
@@ -174,8 +174,8 @@ var fifoDequeuePolicy = func(queue []func()) (func(), []func()) {
 	}
 }
 
-// queueStats will manage the stats of the  queue (current
-// inflight in queue, last time the queue was empty...).
+// queueStats will manage the stats of the queue (current
+// inflight in queue, last time the queue was empty).
 type queueStats struct {
 	lastTimeEmpty time.Time
 	size          int
@@ -200,7 +200,7 @@ func (q *queueStats) decr() {
 	}
 }
 
-// SinceLastEmpty will return how long has been been the queue empty.
+// SinceLastEmpty returns how long the queue has been non-empty.
 func (q *queueStats) SinceLastEmpty() time.Duration {
 	q.mu.Lock()
 	defer q.mu.Unlock()

@@ -155,4 +155,3 @@ func (a *atomicCounter) Inc() int {
 func (a *atomicCounter) Dec() int {
 	return int(a.c.Add(-1))
 }
-

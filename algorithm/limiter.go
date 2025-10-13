@@ -22,10 +22,10 @@ const (
 // These are based on TCP congestion control algorithms.
 type Limiter interface {
 	// MeasureSample will measure the sample of an execution. This data will be used
-	// by the algorithm to know what should be the algorithm.
-	// It also returns the current limit after measuring the samples.
+	// by the algorithm to know what the limit should be.
+	// It returns the current limit after measuring the sample.
 	MeasureSample(startTime time.Time, queuedDuration time.Duration, inflight int, result Result) int
 
-	// GetLimit Gets the current algorithm.
+	// GetLimit gets the current limit.
 	GetLimit() int
 }

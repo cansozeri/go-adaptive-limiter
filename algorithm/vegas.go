@@ -12,12 +12,12 @@ import (
 // Note: math/rand top-level functions are automatically thread-safe since Go 1.20.
 // No additional synchronization needed for rand.Float64() calls.
 
-// VegasConfig VegasLimit implements a Limiter based on TCP Vegas where the limit increases by alpha if the queue_use is
-// small < alpha and decreases by alpha if the queue_use is large > beta.
+// VegasConfig configures a limiter based on TCP Vegas where the limit increases by alpha if the queue_use is
+// small (< alpha) and decreases by alpha if the queue_use is large (> beta).
 //
 // Queue size is calculated using the formula,
 //
-//	queue_use = limit − BWE×RttNoLoad = limit × (1 − RttNoLoad/RTTactual)
+//	queue_use = limit - BWE×RttNoLoad = limit × (1 - RttNoLoad/RTTactual)
 //
 // For traditional TCP Vegas alpha is typically 2-3 and beta is typically 4-6.  To allow for better growth and stability
 // at higher limits we set alpha=Max(3, 10% of the current limit) and beta=Max(6, 20% of the current limit).

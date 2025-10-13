@@ -45,4 +45,3 @@ func WithResultPolicy(policy ResultPolicy) Option {
 		c.policy = policy
 	}
 }
-

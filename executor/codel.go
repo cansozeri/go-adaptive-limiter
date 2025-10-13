@@ -3,16 +3,14 @@ package executor
 import (
 	"context"
 	"time"
-
-	
 )
 
 // AdaptiveLIFOCodelConfig is the configuration for the AdaptiveLIFOCodel executor.
 type AdaptiveLIFOCodelConfig struct {
-	// CodelTargetDelay is the duration the execution funcs can be on the queue before being
-	// rejected when the controlled delay congestion has been activated (a.k.a bufferbloat detected).
+	// CodelTargetDelay is the duration execution functions can be on the queue before being
+	// rejected when controlled delay congestion has been activated (bufferbloat detected).
 	CodelTargetDelay time.Duration
-	// CodelInterval is the default max time the funcs can be on the queue before being rejected.
+	// CodelInterval is the default maximum time functions can be on the queue before being rejected.
 	CodelInterval time.Duration
 	// The queue uses a goroutine in background to execute the queue
 	// jobs, in case it wants to be stopped a channel could be used to
@@ -43,18 +41,15 @@ type adaptiveLIFOCodel struct {
 	workerPool
 }
 
-// NewAdaptiveLIFOCodel is an executor based on CoDel algorithm (Controlled delay) for the execution,
-// more info here https://queue.acm.org/detail.cfm?id=2209336, and adaptive LIFO for the queue
-// priority.
+// NewAdaptiveLIFOCodel creates an executor based on the CoDel algorithm (Controlled Delay)
+// combined with adaptive LIFO queue priority.
 //
-// Codel's implementation it's based on Facebook's Codel usage for resiliency.
-// More information can be found here: https://queue.acm.org/detail.cfm?id=2839461
+// More info: https://queue.acm.org/detail.cfm?id=2209336
+// Facebook's implementation: https://queue.acm.org/detail.cfm?id=2839461
 //
-// At first the queue priority will be FIFO, but when we detect bufferbloat it will change queue
-// execution priority to LIFO.
-// On the other hand the execution timeout will change based on the last time the queue was empty
-// this will give us the ability to set a lesser timeout on the queued executions when the queue
-// starts to grow.
+// The queue starts with FIFO priority, but switches to LIFO when bufferbloat is detected.
+// The execution timeout adjusts based on the last time the queue was empty, allowing for
+// shorter timeouts when the queue starts to grow.
 func NewAdaptiveLIFOCodel(cfg AdaptiveLIFOCodelConfig) Executor {
 	cfg.defaults()
 

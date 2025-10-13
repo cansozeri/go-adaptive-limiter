@@ -7,18 +7,17 @@ import (
 
 // AIMDConfig is the configuration of the algorithm used for the AIMD adaptive algorithm.
 type AIMDConfig struct {
-	// MinimumLimit is the mimimum limit the algorithm will decrease. It also will start with this algorithm.
+	// MinimumLimit is the minimum limit the algorithm will decrease to. It also will be the starting limit.
 	MinimumLimit int
-	// This is like TCP algorithms `ssthresh`. It will start increasing the limit by one
-	// and when reached to this threshold it will change the mode and increase slowly.
+	// This is like TCP algorithm's `ssthresh`. It will start increasing the limit by one
+	// and when this threshold is reached it will change mode and increase slowly.
 	// If set to 0 then slow start will be disabled.
 	SlowStartThreshold int
-	// RTTTimeout is the rtt is greater than this value it will be measured as a failure. This is an important setting
-	// that depends a lot on the application, by default will be 2s but your app could need a greater timeout or
-	// lesser one.
+	// RTTTimeout is the threshold above which RTT will be measured as a failure. This is an important setting
+	// that depends on the application. Default is 2s but your app may need a greater or lesser timeout.
 	RTTTimeout time.Duration
 	// BackoffRatio is the ratio used to decrease the limit when a failure occurs.
-	// this will be the way is used: new limit = current limit * backoffRatio.
+	// The formula is: new limit = current limit * backoffRatio.
 	BackoffRatio float64
 	// LimitIncrementInflightFactor will increment the limit only if inflight * LimitIncrementInflightFactor > limit
 	LimitIncrementInflightFactor int
@@ -43,9 +42,10 @@ func (c *AIMDConfig) defaults() {
 	}
 }
 
-// NewAIMD returns a new aimd adaptive Limiter algorithm, based on the TCP congestion algorithm with the same name.
-// It increases the limit at a constant rate and when congestion occurs it will decrease by a configured factor.
-// More information about this algorithm in: https://en.wikipedia.org/wiki/Additive_increase/multiplicative_decrease
+// NewAIMD creates a new AIMD (Additive Increase/Multiplicative Decrease) adaptive limiter algorithm,
+// based on the TCP congestion control algorithm. It increases the limit at a constant rate and
+// decreases by a configured factor when congestion occurs.
+// More info: https://en.wikipedia.org/wiki/Additive_increase/multiplicative_decrease
 func NewAIMD(cfg AIMDConfig) Limiter {
 	cfg.defaults()
 
@@ -101,7 +101,7 @@ func (a *aimd) decreaseLimit() int {
 
 // increaseLimit will increase the limit being aware of slow start.
 func (a *aimd) increaseLimit() int {
-	// If slows tart disabled or our limit is less than the slow start threshold then
+	// If slow start is disabled or our limit is less than the slow start threshold then
 	// increment by one.
 	if int(a.limit) < a.cfg.SlowStartThreshold || a.cfg.SlowStartThreshold == 0 {
 		a.limit++

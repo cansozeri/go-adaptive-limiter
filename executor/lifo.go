@@ -3,18 +3,16 @@ package executor
 import (
 	"context"
 	"time"
-
-	
 )
 
 // LIFOConfig is the configuration for the LIFO executor.
 type LIFOConfig struct {
-	// MaxWaitTime is the max time a limiter will wait to execute before
-	// being dropped its execution and be rejected.
+	// MaxWaitTime is the maximum time a request will wait to execute before
+	// being dropped and rejected.
 	MaxWaitTime time.Duration
 
-	// The fifo queue uses a goroutine in background to execute the queue
-	// jobs, in case it want's to be stopped a channel could be used to
+	// The LIFO queue uses a goroutine in background to execute the queue
+	// jobs, in case it wants to be stopped a channel could be used to
 	// stop the execution.
 	StopChannel chan struct{}
 }
@@ -35,7 +33,7 @@ type lifo struct {
 	workerPool
 }
 
-// NewLIFO implements a LIFO priority executor.
+// NewLIFO creates a LIFO (last-in-first-out) priority executor.
 func NewLIFO(cfg LIFOConfig) Executor {
 	cfg.defaults()
 

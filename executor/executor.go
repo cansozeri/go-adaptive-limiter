@@ -5,25 +5,24 @@ import (
 	"sync"
 )
 
-// Executor knows how to limit the execution using different kind of execution workflows
-// like worker pools.
-// It also has different policies of how to work, for example waiting a time before
-// error, or directly error.
+// Executor manages execution using different workflows such as worker pools.
+// It supports different policies for handling work, such as waiting before erroring
+// or rejecting immediately.
 type Executor interface {
-	// Execute will execute the received function and will return  the
-	// result of the executed function, or reject error from the executor.
+	// Execute will execute the received function and will return the
+	// result of the executed function, or a reject error from the executor.
 	Execute(ctx context.Context, f func() error) error
 	WorkerPool
 }
 
-// WorkerPool maintains a worker pool what knows how to increase and decrease the worker pool.
+// WorkerPool maintains a worker pool that can dynamically increase and decrease the number of workers.
 type WorkerPool interface {
 	SetWorkerQuantity(quantity int)
 	Shutdown()
 }
 
 // workerPool knows how to increase and decrease the current workers executing jobs.
-// it's only objective is to set the desired number of concurrent execution flows.
+// Its only objective is to set the desired number of concurrent execution flows.
 type workerPool struct {
 	workerStoppers []chan struct{}
 	jobQueue       chan func()
@@ -46,7 +45,7 @@ func (w *workerPool) SetWorkerQuantity(quantity int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// If we don't need to increase or decrease the worker quantity the do nothing.
+	// If we don't need to increase or decrease the worker quantity then do nothing.
 	if len(w.workerStoppers) == quantity {
 		return
 	}

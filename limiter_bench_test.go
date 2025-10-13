@@ -70,4 +70,3 @@ func BenchmarkVegasAlgorithm(b *testing.B) {
 		})
 	}
 }
-

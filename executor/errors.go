@@ -9,4 +9,3 @@ func (e Error) Error() string {
 
 // ErrRejectedExecution is returned when execution is rejected due to capacity limits.
 var ErrRejectedExecution = Error("execution has been rejected")
-

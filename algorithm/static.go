@@ -4,14 +4,14 @@ import (
 	"time"
 )
 
-// static is an static algorithm that is used for testing purposes, isn't adaptive
-// it will have a static algorithm.
+// static is a static algorithm that is used for testing purposes, isn't adaptive
+// it will have a static limit.
 type static struct {
 	limit int
 }
 
-// NewStatic returns a new Static algorithm that is used ofr testing purposes, isn't adaptive
-// it will have a static algorithm.
+// NewStatic returns a new Static algorithm that is used for testing purposes, isn't adaptive
+// it will have a static limit.
 func NewStatic(limit int) Limiter {
 	return &static{
 		limit: limit,

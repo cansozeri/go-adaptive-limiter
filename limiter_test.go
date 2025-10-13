@@ -123,4 +123,3 @@ func TestLimiter_Shutdown(t *testing.T) {
 	// Shutdown should be safe to call
 	a.True(true)
 }
-

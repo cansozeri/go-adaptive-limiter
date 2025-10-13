@@ -54,4 +54,3 @@ func main() {
 	log.Println("Stats: curl http://localhost:8080/stats")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
-
