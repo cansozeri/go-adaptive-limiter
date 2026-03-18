@@ -9,6 +9,8 @@ import (
 type AIMDConfig struct {
 	// MinimumLimit is the minimum limit the algorithm will decrease to. It also will be the starting limit.
 	MinimumLimit int
+	// MaxLimit is the upper bound. The algorithm will never exceed this value. Default is 200.
+	MaxLimit int
 	// This is like TCP algorithm's `ssthresh`. It will start increasing the limit by one
 	// and when this threshold is reached it will change mode and increase slowly.
 	// If set to 0 then slow start will be disabled.
@@ -17,15 +19,16 @@ type AIMDConfig struct {
 	// that depends on the application. Default is 2s but your app may need a greater or lesser timeout.
 	RTTTimeout time.Duration
 	// BackoffRatio is the ratio used to decrease the limit when a failure occurs.
-	// The formula is: new limit = current limit * backoffRatio.
+	// The formula is: new limit = current limit * backoffRatio. Must be in [0.5, 1.0).
 	BackoffRatio float64
-	// LimitIncrementInflightFactor will increment the limit only if inflight * LimitIncrementInflightFactor > limit
+	// LimitIncrementInflightFactor controls the app-limited guard. The limit is only
+	// increased when inflight * LimitIncrementInflightFactor >= currentLimit. Default is 2,
+	// meaning the system must be at least 50% utilized before the limit grows.
 	LimitIncrementInflightFactor int
 }
 
 func (c *AIMDConfig) defaults() {
-	// Safety defaults.
-	if c.BackoffRatio < 0.5 || c.BackoffRatio > 1 {
+	if c.BackoffRatio < 0.5 || c.BackoffRatio >= 1.0 {
 		c.BackoffRatio = 0.9
 	}
 
@@ -37,8 +40,12 @@ func (c *AIMDConfig) defaults() {
 		c.MinimumLimit = 10
 	}
 
+	if c.MaxLimit == 0 {
+		c.MaxLimit = 200
+	}
+
 	if c.LimitIncrementInflightFactor == 0 {
-		c.LimitIncrementInflightFactor = 1
+		c.LimitIncrementInflightFactor = 2
 	}
 }
 
@@ -69,23 +76,18 @@ func (a *aimd) MeasureSample(startTime time.Time, _ time.Duration, inflight int,
 	currentLimit := int(a.limit)
 	switch result {
 	case ResultSuccess:
-		// Although we have a success maybe we are experiencing congestion.
 		if time.Since(startTime) > a.cfg.RTTTimeout {
 			return a.decreaseLimit()
 		}
 
-		// This is a real success.
-		// Only increase if we need it. If not we would be increasing forever.
-		// If we have double of inflight request waiting then increase.
-		if inflight > currentLimit*a.cfg.LimitIncrementInflightFactor {
+		if inflight*a.cfg.LimitIncrementInflightFactor >= currentLimit {
 			return a.increaseLimit()
 		}
 
 	case ResultFailure:
 		return a.decreaseLimit()
-
 	}
-	// Same as ignore.
+
 	return currentLimit
 }
 
@@ -101,13 +103,14 @@ func (a *aimd) decreaseLimit() int {
 
 // increaseLimit will increase the limit being aware of slow start.
 func (a *aimd) increaseLimit() int {
-	// If slow start is disabled or our limit is less than the slow start threshold then
-	// increment by one.
 	if int(a.limit) < a.cfg.SlowStartThreshold || a.cfg.SlowStartThreshold == 0 {
 		a.limit++
 	} else {
-		// Slow start threshold bypassed.
 		a.limit = a.limit + (1 * (1 / a.limit))
+	}
+
+	if max := float64(a.cfg.MaxLimit); a.limit > max {
+		a.limit = max
 	}
 
 	return int(a.limit)

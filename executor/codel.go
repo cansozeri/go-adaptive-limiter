@@ -55,9 +55,17 @@ func NewAdaptiveLIFOCodel(cfg AdaptiveLIFOCodelConfig) Executor {
 
 	a := &adaptiveLIFOCodel{
 		cfg:        cfg,
-		queue:      newDynamicQueue(cfg.StopChannel, enqueueAtEndPolicy, fifoDequeuePolicy),
 		workerPool: newWorkerPool(),
 	}
+	a.queue = newDynamicQueue(a.done(), enqueueAtEndPolicy, fifoDequeuePolicy)
+
+	go func() {
+		select {
+		case <-cfg.StopChannel:
+			a.Shutdown()
+		case <-a.done():
+		}
+	}()
 	go a.fromQueueToWorkerPool()
 
 	return a
@@ -91,6 +99,9 @@ func (a *adaptiveLIFOCodel) Execute(ctx context.Context, f func() error) error {
 	// and the receiver doesn't need to be there before the execution has finished.
 	res := make(chan error, 1)
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	// Create a job and check if the job has been cancelled already
 	// in case we need to discard the execution of the client job.
 	job := func() {
@@ -109,15 +120,25 @@ func (a *adaptiveLIFOCodel) Execute(ctx context.Context, f func() error) error {
 		res <- f()
 	}
 
-	// Enqueue the job in the queue that knows how to submit jobs to the worker
-	// pool afterward.
-	go func() {
-		a.queue.InChannel() <- job
-	}()
+	select {
+	case <-a.done():
+		canceledJob <- struct{}{}
+		return ErrRejectedExecution
+	case a.queue.InChannel() <- job:
+	case <-timer.C:
+		canceledJob <- struct{}{}
+		return ErrRejectedExecution
+	case <-ctx.Done():
+		canceledJob <- struct{}{}
+		return ctx.Err()
+	}
 
 	// Wait until dequeued or timeout in queue waiting to be executed.
 	select {
-	case <-time.After(timeout):
+	case <-a.done():
+		canceledJob <- struct{}{}
+		return ErrRejectedExecution
+	case <-timer.C:
 		canceledJob <- struct{}{}
 		return ErrRejectedExecution
 	case <-ctx.Done():
@@ -133,10 +154,14 @@ func (a *adaptiveLIFOCodel) Execute(ctx context.Context, f func() error) error {
 func (a *adaptiveLIFOCodel) fromQueueToWorkerPool() {
 	for {
 		select {
-		case <-a.cfg.StopChannel:
+		case <-a.done():
 			return
 		case job := <-a.queue.OutChannel():
-			a.workerPool.jobQueue <- job
+			select {
+			case <-a.done():
+				return
+			case a.workerPool.jobQueue <- job:
+			}
 		}
 	}
 }

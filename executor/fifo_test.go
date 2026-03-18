@@ -121,3 +121,23 @@ func TestFIFO_DefaultConfig(t *testing.T) {
 		t.Errorf("expected default MaxWaitTime 1s, got %v", fifo.cfg.MaxWaitTime)
 	}
 }
+
+func TestFIFO_ShutdownRejectsNewWorkImmediately(t *testing.T) {
+	exec := NewFIFO(FIFOConfig{
+		MaxWaitTime: time.Second,
+	})
+	exec.SetWorkerQuantity(1)
+	exec.Shutdown()
+
+	start := time.Now()
+	err := exec.Execute(context.Background(), func() error {
+		return nil
+	})
+
+	if !errors.Is(err, ErrRejectedExecution) {
+		t.Fatalf("expected ErrRejectedExecution after shutdown, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("expected immediate rejection after shutdown, took %v", elapsed)
+	}
+}

@@ -55,11 +55,12 @@ func main() {
 
 ### AIMD (Additive Increase, Multiplicative Decrease)
 
-Based on the TCP congestion control algorithm. Increases limit linearly, decreases multiplicatively on congestion.
+Based on the TCP congestion control algorithm. Increases limit linearly when the system is sufficiently utilized (at least 50% of current limit), decreases multiplicatively on congestion or timeout.
 
 ```go
 algorithm.NewAIMD(algorithm.AIMDConfig{
     MinimumLimit:       10,
+    MaxLimit:           200,
     SlowStartThreshold: 50,
     RTTTimeout:         100 * time.Millisecond,
     BackoffRatio:       0.9,
@@ -70,7 +71,7 @@ Best for general-purpose adaptive limiting.
 
 ### Vegas
 
-Based on TCP Vegas. Uses queue delay to detect congestion proactively.
+Based on TCP Vegas. Uses queue delay to detect congestion proactively. Drops always trigger an immediate decrease. Successful samples are only used for adaptation when the system is at least 50% utilized, preventing noisy signals under low load.
 
 ```go
 algorithm.NewVegas(algorithm.VegasConfig{
@@ -166,7 +167,7 @@ result, err := limiter.ExecuteWithResult(lim, ctx, func() (string, error) {
 ```go
 stats := lim.Stats()
 // stats.CurrentLimit - current concurrency limit
-// stats.InFlight - requests waiting in queue
+// stats.InFlight - admitted requests (queued + executing)
 // stats.Executing - requests currently executing
 ```
 
@@ -211,7 +212,8 @@ All operations are thread-safe:
 lim := limiter.New()
 defer lim.Shutdown()
 
-// Stops accepting new work and waits for in-flight requests
+// Stops accepting new work immediately and waits for admitted work to finish.
+// New Execute calls return limiter.ErrRejectedExecution after shutdown begins.
 ```
 
 ## Attribution
@@ -225,7 +227,7 @@ This library is inspired by:
 
 ## Requirements
 
-- Go 1.20 or later (uses native thread-safe math/rand)
+- Go 1.23 or later
 
 ## License
 

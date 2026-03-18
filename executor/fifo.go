@@ -45,10 +45,15 @@ func (f *fifo) Execute(ctx context.Context, fn func() error) error {
 		result <- fn()
 	}
 
+	timer := time.NewTimer(f.cfg.MaxWaitTime)
+	defer timer.Stop()
+
 	select {
+	case <-f.done():
+		return ErrRejectedExecution
 	case f.jobQueue <- job:
 		return <-result
-	case <-time.After(f.cfg.MaxWaitTime):
+	case <-timer.C:
 		return ErrRejectedExecution
 	case <-ctx.Done():
 		return ctx.Err()

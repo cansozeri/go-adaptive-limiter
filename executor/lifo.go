@@ -39,9 +39,17 @@ func NewLIFO(cfg LIFOConfig) Executor {
 
 	l := &lifo{
 		cfg:        cfg,
-		queue:      newDynamicQueue(cfg.StopChannel, enqueueAtEndPolicy, lifoDequeuePolicy),
 		workerPool: newWorkerPool(),
 	}
+	l.queue = newDynamicQueue(l.done(), enqueueAtEndPolicy, lifoDequeuePolicy)
+
+	go func() {
+		select {
+		case <-cfg.StopChannel:
+			l.Shutdown()
+		case <-l.done():
+		}
+	}()
 	go l.fromQueueToWorkerPool()
 
 	return l
@@ -53,6 +61,10 @@ func (l *lifo) Execute(ctx context.Context, f func() error) error {
 	dequeuedJob := make(chan struct{})
 	canceledJob := make(chan struct{})
 	res := make(chan error, 1)
+
+	timer := time.NewTimer(l.cfg.MaxWaitTime)
+	defer timer.Stop()
+
 	job := func() {
 		// Send the signal the job has been dequeued.
 		close(dequeuedJob)
@@ -66,13 +78,24 @@ func (l *lifo) Execute(ctx context.Context, f func() error) error {
 		res <- f()
 	}
 
-	// Send to a queue.
-	go func() {
-		l.queue.InChannel() <- job
-	}()
+	select {
+	case <-l.done():
+		close(canceledJob)
+		return ErrRejectedExecution
+	case l.queue.InChannel() <- job:
+	case <-timer.C:
+		close(canceledJob)
+		return ErrRejectedExecution
+	case <-ctx.Done():
+		close(canceledJob)
+		return ctx.Err()
+	}
 
 	select {
-	case <-time.After(l.cfg.MaxWaitTime):
+	case <-l.done():
+		close(canceledJob)
+		return ErrRejectedExecution
+	case <-timer.C:
 		close(canceledJob)
 		return ErrRejectedExecution
 	case <-ctx.Done():
@@ -88,11 +111,15 @@ func (l *lifo) Execute(ctx context.Context, f func() error) error {
 func (l *lifo) fromQueueToWorkerPool() {
 	for {
 		select {
-		case <-l.cfg.StopChannel:
+		case <-l.done():
 			return
 		case job := <-l.queue.OutChannel():
 			// Send to execution worker.
-			l.workerPool.jobQueue <- job
+			select {
+			case <-l.done():
+				return
+			case l.workerPool.jobQueue <- job:
+			}
 		}
 	}
 }

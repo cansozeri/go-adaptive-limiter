@@ -19,8 +19,12 @@ import (
 //
 //	queue_use = limit - BWE×RttNoLoad = limit × (1 - RttNoLoad/RTTactual)
 //
-// For traditional TCP Vegas alpha is typically 2-3 and beta is typically 4-6.  To allow for better growth and stability
-// at higher limits we set alpha=Max(3, 10% of the current limit) and beta=Max(6, 20% of the current limit).
+// For traditional TCP Vegas alpha is typically 2-3 and beta is typically 4-6.  To allow for better growth and
+// stability at higher limits, the default functions scale with log10 of the current limit:
+//
+//	alpha     = 3 * max(1, floor(log10(limit)))
+//	beta      = 6 * max(1, floor(log10(limit)))
+//	threshold = max(1, floor(log10(limit)))
 type VegasConfig struct {
 	MinimumLimit    int
 	RttNoLoad       time.Duration
@@ -49,14 +53,14 @@ func (c *VegasConfig) defaults() {
 		c.RttNoLoad = 2 * time.Second
 	}
 
-	if c.Smoothing < 1 || c.Smoothing > 1.0 {
+	if c.Smoothing <= 0 || c.Smoothing > 1.0 {
 		c.Smoothing = 1.0
 	}
 
 	if c.ProbeMultiplier <= 0 {
 		c.ProbeMultiplier = 30
 	}
-	defaultLogFunc := mathfn.Log10RootFunction(c.MinimumLimit)
+	defaultLogFunc := mathfn.Log10RootFunction(0)
 	if c.AlphaFunc == nil {
 		c.AlphaFunc = func(limit int) int { return 3 * defaultLogFunc(limit) }
 	}
@@ -67,7 +71,7 @@ func (c *VegasConfig) defaults() {
 		c.ThresholdFunc = func(limit int) int { return defaultLogFunc(limit) }
 	}
 
-	defaultLogFloatFunc := mathfn.Log10RootFloatFunction(float64(c.MinimumLimit))
+	defaultLogFloatFunc := mathfn.Log10RootFloatFunction(0)
 	if c.IncreaseFunc == nil {
 		c.IncreaseFunc = func(limit float64) float64 { return limit + defaultLogFloatFunc(limit) }
 	}
@@ -141,31 +145,30 @@ func (v *vegas) updateEstimatedLimit(rtt time.Duration, inflight int, result Res
 	currentLimit := int(v.limit)
 
 	switch result {
-	case ResultSuccess:
-		alpha := v.cfg.AlphaFunc(currentLimit)
-		beta := v.cfg.BetaFunc(currentLimit)
-		threshold := v.cfg.ThresholdFunc(currentLimit)
-
-		if queueSize < threshold {
-			// Aggressive increase when no queuing
-			newLimit = float64(currentLimit + beta)
-		} else if queueSize < alpha {
-			// Increase the limit if queue is still manageable
-			newLimit = v.cfg.IncreaseFunc(v.limit)
-		} else if queueSize > beta {
-			// Detecting latency so decrease
-			newLimit = v.cfg.DecreaseFunc(v.limit)
-		} else {
-			// otherwise we're within the sweet spot so nothing to do
-			return currentLimit
-		}
-
 	case ResultFailure:
+		newLimit = v.cfg.DecreaseFunc(v.limit)
+
+	case ResultSuccess:
 		if inflight*2 < currentLimit {
 			return currentLimit
 		}
 
-		newLimit = v.cfg.DecreaseFunc(v.limit)
+		alpha := v.cfg.AlphaFunc(currentLimit)
+		beta := v.cfg.BetaFunc(currentLimit)
+		threshold := v.cfg.ThresholdFunc(currentLimit)
+
+		if queueSize <= threshold {
+			newLimit = float64(currentLimit + beta)
+		} else if queueSize < alpha {
+			newLimit = v.cfg.IncreaseFunc(v.limit)
+		} else if queueSize > beta {
+			newLimit = v.cfg.DecreaseFunc(v.limit)
+		} else {
+			return currentLimit
+		}
+
+	default:
+		return currentLimit
 	}
 
 	newLimit = stdlib.Max(1, stdlib.Min(float64(v.cfg.MaxLimit), newLimit))

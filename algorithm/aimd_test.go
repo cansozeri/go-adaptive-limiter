@@ -184,8 +184,10 @@ func TestAIMD_BackoffRatio(t *testing.T) {
 		expected     float64
 	}{
 		{"valid ratio", 0.9, 0.9},
+		{"lower bound", 0.5, 0.5},
 		{"too low", 0.3, 0.9},
 		{"too high", 1.5, 0.9},
+		{"exactly one is useless", 1.0, 0.9},
 		{"zero", 0, 0.9},
 	}
 
@@ -201,5 +203,76 @@ func TestAIMD_BackoffRatio(t *testing.T) {
 				t.Errorf("expected backoff ratio %.1f, got %.1f", tt.expected, alg.cfg.BackoffRatio)
 			}
 		})
+	}
+}
+
+func TestAIMD_AppLimitedNoIncrease(t *testing.T) {
+	config := AIMDConfig{
+		MinimumLimit: 10,
+		RTTTimeout:   100 * time.Millisecond,
+		BackoffRatio: 0.9,
+	}
+
+	alg := NewAIMD(config).(*aimd)
+	alg.limit = 20
+	initialLimit := alg.GetLimit()
+	startTime := time.Now().Add(-50 * time.Millisecond)
+
+	// inflight=3, well below 50% utilization.
+	// Should not increase: the system is not under real load.
+	newLimit := alg.MeasureSample(startTime, 0, 3, ResultSuccess)
+
+	if newLimit != initialLimit {
+		t.Errorf("app-limited success should not change limit: got %d, was %d", newLimit, initialLimit)
+	}
+}
+
+func TestAIMD_IncreasesWhenUtilized(t *testing.T) {
+	config := AIMDConfig{
+		MinimumLimit: 10,
+		RTTTimeout:   100 * time.Millisecond,
+		BackoffRatio: 0.9,
+	}
+
+	alg := NewAIMD(config).(*aimd)
+	alg.limit = 20
+	initialLimit := alg.GetLimit()
+	startTime := time.Now().Add(-50 * time.Millisecond)
+
+	// inflight=15, utilization is 75%. System is sufficiently loaded
+	// to trust the signal and allow growth.
+	newLimit := alg.MeasureSample(startTime, 0, 15, ResultSuccess)
+
+	if newLimit <= initialLimit {
+		t.Errorf("success with adequate inflight should increase limit: got %d, was %d", newLimit, initialLimit)
+	}
+}
+
+func TestAIMD_MaxLimitEnforced(t *testing.T) {
+	config := AIMDConfig{
+		MinimumLimit: 10,
+		MaxLimit:     50,
+		RTTTimeout:   1 * time.Second,
+		BackoffRatio: 0.9,
+	}
+
+	alg := NewAIMD(config)
+	startTime := time.Now().Add(-50 * time.Millisecond)
+
+	for i := 0; i < 200; i++ {
+		alg.MeasureSample(startTime, 0, 200, ResultSuccess)
+	}
+
+	limit := alg.GetLimit()
+	if limit > config.MaxLimit {
+		t.Errorf("limit %d exceeded maximum %d", limit, config.MaxLimit)
+	}
+}
+
+func TestAIMD_MaxLimitDefault(t *testing.T) {
+	alg := NewAIMD(AIMDConfig{}).(*aimd)
+
+	if alg.cfg.MaxLimit != 200 {
+		t.Errorf("expected default max limit 200, got %d", alg.cfg.MaxLimit)
 	}
 }
