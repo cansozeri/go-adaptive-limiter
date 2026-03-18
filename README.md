@@ -166,7 +166,7 @@ result, err := limiter.ExecuteWithResult(lim, ctx, func() (string, error) {
 ```go
 stats := lim.Stats()
 // stats.CurrentLimit - current concurrency limit
-// stats.InFlight - requests waiting in queue
+// stats.InFlight - admitted requests (queued + executing)
 // stats.Executing - requests currently executing
 ```
 
@@ -211,7 +211,8 @@ All operations are thread-safe:
 lim := limiter.New()
 defer lim.Shutdown()
 
-// Stops accepting new work and waits for in-flight requests
+// Stops accepting new work immediately and waits for admitted work to finish.
+// New Execute calls return limiter.ErrRejectedExecution after shutdown begins.
 ```
 
 ## Attribution
@@ -225,7 +226,7 @@ This library is inspired by:
 
 ## Requirements
 
-- Go 1.20 or later (uses native thread-safe math/rand)
+- Go 1.23 or later
 
 ## License
 

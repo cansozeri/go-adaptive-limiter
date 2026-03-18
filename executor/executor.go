@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // Executor manages execution using different workflows such as worker pools.
@@ -26,6 +27,8 @@ type WorkerPool interface {
 type workerPool struct {
 	workerStoppers []chan struct{}
 	jobQueue       chan func()
+	doneC          chan struct{}
+	closed         atomic.Bool
 	mu             sync.Mutex
 	shutdownOnce   sync.Once
 }
@@ -33,17 +36,22 @@ type workerPool struct {
 func newWorkerPool() workerPool {
 	return workerPool{
 		jobQueue: make(chan func()),
+		doneC:    make(chan struct{}),
 	}
 }
 
 // SetWorkerQuantity knows how to increase or decrease the worker pool.
 func (w *workerPool) SetWorkerQuantity(quantity int) {
-	if quantity < 0 {
+	if quantity < 0 || w.isShutdown() {
 		return
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if w.isShutdown() {
+		return
+	}
 
 	// If we don't need to increase or decrease the worker quantity then do nothing.
 	if len(w.workerStoppers) == quantity {
@@ -84,6 +92,9 @@ func (w *workerPool) increaseWorkers(workers int) {
 // This method is safe to call multiple times.
 func (w *workerPool) Shutdown() {
 	w.shutdownOnce.Do(func() {
+		w.closed.Store(true)
+		close(w.doneC)
+
 		w.mu.Lock()
 		defer w.mu.Unlock()
 
@@ -95,6 +106,14 @@ func (w *workerPool) Shutdown() {
 		// Clear the stoppers slice
 		w.workerStoppers = nil
 	})
+}
+
+func (w *workerPool) done() <-chan struct{} {
+	return w.doneC
+}
+
+func (w *workerPool) isShutdown() bool {
+	return w.closed.Load()
 }
 
 func (w *workerPool) newWorker(stopC chan struct{}) {

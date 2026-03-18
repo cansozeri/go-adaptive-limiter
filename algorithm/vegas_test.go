@@ -202,9 +202,7 @@ func TestVegas_Smoothing(t *testing.T) {
 	}
 
 	alg := NewVegas(config).(*vegas)
-	// Default smoothing in defaults() sets it to 1.0 if out of range
-	// Smoothing 0.8 is valid, should be kept
-	if alg.cfg.Smoothing != 0.8 && alg.cfg.Smoothing != 1.0 {
-		t.Errorf("expected smoothing 0.8 or 1.0, got %f", alg.cfg.Smoothing)
+	if alg.cfg.Smoothing != 0.8 {
+		t.Errorf("expected smoothing 0.8, got %f", alg.cfg.Smoothing)
 	}
 }

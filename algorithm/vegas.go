@@ -49,7 +49,7 @@ func (c *VegasConfig) defaults() {
 		c.RttNoLoad = 2 * time.Second
 	}
 
-	if c.Smoothing < 1 || c.Smoothing > 1.0 {
+	if c.Smoothing <= 0 || c.Smoothing > 1.0 {
 		c.Smoothing = 1.0
 	}
 

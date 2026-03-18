@@ -159,3 +159,26 @@ func TestLIFO_Shutdown(t *testing.T) {
 	// Multiple shutdowns should not panic
 	exec.Shutdown()
 }
+
+func TestLIFO_ShutdownRejectsNewWorkImmediately(t *testing.T) {
+	stopChan := make(chan struct{})
+
+	exec := NewLIFO(LIFOConfig{
+		MaxWaitTime: time.Second,
+		StopChannel: stopChan,
+	})
+	exec.SetWorkerQuantity(1)
+	exec.Shutdown()
+
+	start := time.Now()
+	err := exec.Execute(context.Background(), func() error {
+		return nil
+	})
+
+	if !errors.Is(err, ErrRejectedExecution) {
+		t.Fatalf("expected ErrRejectedExecution after shutdown, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("expected immediate rejection after shutdown, took %v", elapsed)
+	}
+}

@@ -2,6 +2,7 @@ package limiter_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -117,9 +118,80 @@ func TestLimiter_ContextCancellation(t *testing.T) {
 func TestLimiter_Shutdown(t *testing.T) {
 	a := assert.New(t)
 
+	lim := limiter.New(
+		limiter.WithAlgorithm(algorithm.NewStatic(1)),
+		limiter.WithExecutor(executor.NewFIFO(executor.FIFOConfig{
+			MaxWaitTime: time.Second,
+		})),
+	)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	execDone := make(chan error, 1)
+
+	go func() {
+		execDone <- lim.Execute(context.Background(), func() error {
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+
+	<-started
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		lim.Shutdown()
+		close(shutdownDone)
+	}()
+
+	select {
+	case <-shutdownDone:
+		t.Fatal("shutdown returned before the in-flight request completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	start := time.Now()
+	err := lim.Execute(context.Background(), func() error {
+		return nil
+	})
+	elapsed := time.Since(start)
+
+	a.ErrorIs(err, limiter.ErrRejectedExecution)
+	a.Less(elapsed, 100*time.Millisecond, "shutdown should reject new work immediately")
+
+	close(release)
+
+	select {
+	case err := <-execDone:
+		a.NoError(err)
+	case <-time.After(time.Second):
+		t.Fatal("in-flight request did not complete")
+	}
+
+	select {
+	case <-shutdownDone:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not wait for in-flight work to finish")
+	}
+
+	// Shutdown should remain safe to call multiple times.
+	lim.Shutdown()
+}
+
+func TestLimiter_ShutdownReturnsRejectedExecution(t *testing.T) {
 	lim := limiter.New()
 	lim.Shutdown()
 
-	// Shutdown should be safe to call
-	a.True(true)
+	start := time.Now()
+	err := lim.Execute(context.Background(), func() error {
+		return nil
+	})
+
+	if !errors.Is(err, limiter.ErrRejectedExecution) {
+		t.Fatalf("expected rejected execution after shutdown, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("expected immediate rejection after shutdown, took %v", elapsed)
+	}
 }

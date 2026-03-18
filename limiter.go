@@ -19,6 +19,7 @@ package limiter
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,6 +38,11 @@ type Limiter struct {
 
 	inFlights atomicCounter
 	executing atomicCounter
+
+	shutdownMu      sync.Mutex
+	shutdownCond    *sync.Cond
+	shuttingDown    bool
+	activeExecution int
 }
 
 // ResultPolicy determines how execution results should be categorized for the algorithm.
@@ -54,6 +60,7 @@ func New(opts ...Option) *Limiter {
 		alg:      cfg.algorithm,
 		policy:   cfg.policy,
 	}
+	lim.shutdownCond = sync.NewCond(&lim.shutdownMu)
 
 	// Set initial limit
 	lim.executor.SetWorkerQuantity(lim.alg.GetLimit())
@@ -64,6 +71,14 @@ func New(opts ...Option) *Limiter {
 // Execute runs the given function with concurrency limiting.
 // Returns an error if execution is rejected or if the function returns an error.
 func (l *Limiter) Execute(ctx context.Context, fn func() error) error {
+	l.shutdownMu.Lock()
+	if l.shuttingDown {
+		l.shutdownMu.Unlock()
+		return ErrRejectedExecution
+	}
+	l.activeExecution++
+	l.shutdownMu.Unlock()
+
 	start := time.Now()
 	var queuedDuration time.Duration
 	var err error
@@ -71,9 +86,16 @@ func (l *Limiter) Execute(ctx context.Context, fn func() error) error {
 	l.inFlights.Inc()
 	defer func() {
 		currentFlights := l.inFlights.Dec()
+		l.shutdownMu.Lock()
+		l.activeExecution--
+		skipAdaptation := l.shuttingDown
+		if l.activeExecution == 0 {
+			l.shutdownCond.Broadcast()
+		}
+		l.shutdownMu.Unlock()
 
 		// Measure and adapt limit based on the execution result
-		if l.policy != nil {
+		if l.policy != nil && !skipAdaptation {
 			result := l.policy(ctx, err)
 			if result != algorithm.ResultIgnore {
 				newLimit := l.alg.MeasureSample(start, queuedDuration, currentFlights, result)
@@ -112,6 +134,7 @@ func ExecuteWithResult[T any](l *Limiter, ctx context.Context, fn func() (T, err
 }
 
 // Stats returns current limiter statistics.
+// InFlight counts all admitted requests, including both queued and executing work.
 func (l *Limiter) Stats() Stats {
 	return Stats{
 		CurrentLimit: l.alg.GetLimit(),
@@ -127,8 +150,16 @@ type Stats struct {
 	Executing    int
 }
 
-// Shutdown gracefully stops the limiter.
+// Shutdown stops accepting new work, waits for admitted work to finish, and then
+// shuts down the underlying executor.
 func (l *Limiter) Shutdown() {
+	l.shutdownMu.Lock()
+	l.shuttingDown = true
+	for l.activeExecution > 0 {
+		l.shutdownCond.Wait()
+	}
+	l.shutdownMu.Unlock()
+
 	if l.executor != nil {
 		l.executor.Shutdown()
 	}

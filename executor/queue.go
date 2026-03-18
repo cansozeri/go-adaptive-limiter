@@ -23,12 +23,12 @@ type dynamicQueue struct {
 	enqueuePolicy enqueuePolicy
 	dequeuePolicy dequeuePolicy
 	queueStats
-	stopC chan struct{}
+	stopC <-chan struct{}
 	// wakeUpDequeuerC will be used to wake up the dequeuer that has been sleeping due to no jobs on the queue.
 	wakeUpDequeuerC chan struct{}
 }
 
-func newDynamicQueue(stopC chan struct{}, enqueuePolicy enqueuePolicy, dequeuePolicy dequeuePolicy) *dynamicQueue {
+func newDynamicQueue(stopC <-chan struct{}, enqueuePolicy enqueuePolicy, dequeuePolicy dequeuePolicy) *dynamicQueue {
 	q := &dynamicQueue{
 		in:            make(chan func()),
 		out:           make(chan func()),
@@ -114,7 +114,11 @@ func (d *dynamicQueue) dequeuer() {
 		// a job enters the queue, our enqueuer will try to wake up us when any
 		// job is queued.
 		if d.queueIsEmpty() {
-			<-d.wakeUpDequeuerC
+			select {
+			case <-d.stopC:
+				return
+			case <-d.wakeUpDequeuerC:
+			}
 
 			// Check again after unblocking because could be the buffered channel signal
 			// of a queue object that we had already processed.
@@ -132,7 +136,11 @@ func (d *dynamicQueue) dequeuer() {
 		d.queueStats.decr() // Reduce in 1 the queue stats.
 
 		// Send the correct job with the channel.
-		d.out <- job
+		select {
+		case <-d.stopC:
+			return
+		case d.out <- job:
+		}
 	}
 }
 
