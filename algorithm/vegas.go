@@ -145,31 +145,30 @@ func (v *vegas) updateEstimatedLimit(rtt time.Duration, inflight int, result Res
 	currentLimit := int(v.limit)
 
 	switch result {
-	case ResultSuccess:
-		alpha := v.cfg.AlphaFunc(currentLimit)
-		beta := v.cfg.BetaFunc(currentLimit)
-		threshold := v.cfg.ThresholdFunc(currentLimit)
-
-		if queueSize < threshold {
-			// Aggressive increase when no queuing
-			newLimit = float64(currentLimit + beta)
-		} else if queueSize < alpha {
-			// Increase the limit if queue is still manageable
-			newLimit = v.cfg.IncreaseFunc(v.limit)
-		} else if queueSize > beta {
-			// Detecting latency so decrease
-			newLimit = v.cfg.DecreaseFunc(v.limit)
-		} else {
-			// otherwise we're within the sweet spot so nothing to do
-			return currentLimit
-		}
-
 	case ResultFailure:
+		newLimit = v.cfg.DecreaseFunc(v.limit)
+
+	case ResultSuccess:
 		if inflight*2 < currentLimit {
 			return currentLimit
 		}
 
-		newLimit = v.cfg.DecreaseFunc(v.limit)
+		alpha := v.cfg.AlphaFunc(currentLimit)
+		beta := v.cfg.BetaFunc(currentLimit)
+		threshold := v.cfg.ThresholdFunc(currentLimit)
+
+		if queueSize <= threshold {
+			newLimit = float64(currentLimit + beta)
+		} else if queueSize < alpha {
+			newLimit = v.cfg.IncreaseFunc(v.limit)
+		} else if queueSize > beta {
+			newLimit = v.cfg.DecreaseFunc(v.limit)
+		} else {
+			return currentLimit
+		}
+
+	default:
+		return currentLimit
 	}
 
 	newLimit = stdlib.Max(1, stdlib.Min(float64(v.cfg.MaxLimit), newLimit))

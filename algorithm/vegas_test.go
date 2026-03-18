@@ -167,11 +167,106 @@ func TestVegas_FailureWithLowInflight(t *testing.T) {
 	initialLimit := alg.GetLimit()
 	startTime := time.Now().Add(-100 * time.Millisecond)
 
-	// Failure with inflight < limit/2 should not decrease
+	// A drop is a drop: failure must always trigger decrease,
+	// even when inflight is well below limit/2.
 	newLimit := alg.MeasureSample(startTime, 0, 20, ResultFailure)
 
+	if newLimit >= initialLimit {
+		t.Errorf("failure should always decrease limit: got %d (was %d)", newLimit, initialLimit)
+	}
+}
+
+func TestVegas_SuccessAppLimitedSkips(t *testing.T) {
+	alg := NewVegas(VegasConfig{
+		MinimumLimit: 100,
+		MaxLimit:     1000,
+		RttNoLoad:    50 * time.Millisecond,
+	}).(*vegas)
+
+	initialLimit := alg.GetLimit()
+	startTime := time.Now().Add(-100 * time.Millisecond)
+
+	// inflight*2 = 20 < limit 100: system is underutilized.
+	// Adapting on sparse samples would distort the limit.
+	newLimit := alg.MeasureSample(startTime, 0, 10, ResultSuccess)
+
 	if newLimit != initialLimit {
-		t.Errorf("expected limit to stay same with low inflight failure, got %d (was %d)", newLimit, initialLimit)
+		t.Errorf("app-limited success should not change limit: got %d (was %d)", newLimit, initialLimit)
+	}
+}
+
+func TestVegas_SuccessiveFailuresDecrease(t *testing.T) {
+	alg := NewVegas(VegasConfig{
+		MinimumLimit: 10,
+		MaxLimit:     1000,
+		RttNoLoad:    50 * time.Millisecond,
+	}).(*vegas)
+	alg.limit = 100
+
+	prevLimit := alg.GetLimit()
+	for i := 0; i < 10; i++ {
+		startTime := time.Now().Add(-100 * time.Millisecond)
+		newLimit := alg.MeasureSample(startTime, 0, 200, ResultFailure)
+		if newLimit > prevLimit {
+			t.Errorf("iteration %d: limit increased from %d to %d during failure", i, prevLimit, newLimit)
+		}
+		prevLimit = newLimit
+	}
+
+	if prevLimit >= 100 {
+		t.Errorf("expected limit to decrease after 10 failures, got %d", prevLimit)
+	}
+}
+
+func TestVegas_LimitFloorAtOne(t *testing.T) {
+	alg := NewVegas(VegasConfig{
+		MinimumLimit: 1,
+		MaxLimit:     100,
+		RttNoLoad:    50 * time.Millisecond,
+	}).(*vegas)
+	alg.limit = 5
+
+	for i := 0; i < 100; i++ {
+		startTime := time.Now().Add(-100 * time.Millisecond)
+		alg.MeasureSample(startTime, 0, 200, ResultFailure)
+	}
+
+	limit := alg.GetLimit()
+	if limit < 1 {
+		t.Errorf("limit must never go below 1, got %d", limit)
+	}
+}
+
+func TestVegas_SmoothingEffect(t *testing.T) {
+	tests := []struct {
+		name      string
+		smoothing float64
+		wantLimit int
+	}{
+		{"full smoothing applies raw value", 1.0, 102},
+		{"half smoothing blends old and new", 0.5, 101},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			alg := NewVegas(VegasConfig{
+				MinimumLimit: 100,
+				MaxLimit:     1000,
+				RttNoLoad:    50 * time.Millisecond,
+				Smoothing:    tt.smoothing,
+			}).(*vegas)
+
+			// Call updateEstimatedLimit directly to avoid timing variance.
+			// limit=100, rtt=52ms: queueSize = ceil(100*(1-50/52)) = 4
+			// alpha(100)=6, threshold(100)=2, queueSize(4) < alpha -> gradual increase
+			// increaseFunc(100) = 102
+			rtt := 52 * time.Millisecond
+			limit := alg.updateEstimatedLimit(rtt, 60, ResultSuccess)
+
+			if limit != tt.wantLimit {
+				t.Errorf("smoothing=%.1f: got limit %d, want %d", tt.smoothing, limit, tt.wantLimit)
+			}
+		})
 	}
 }
 
@@ -215,7 +310,7 @@ func TestVegas_Smoothing(t *testing.T) {
 }
 
 func TestVegas_DefaultAlphaBetaThreshold(t *testing.T) {
-	// Default alpha/beta/threshold should follow Netflix's log10-based approach:
+	// Default alpha/beta/threshold use log10-scaled values:
 	//   alpha(limit)     = 3 * max(1, floor(log10(limit)))
 	//   beta(limit)      = 6 * max(1, floor(log10(limit)))
 	//   threshold(limit) = max(1, floor(log10(limit)))
