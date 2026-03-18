@@ -55,15 +55,22 @@ func TestVegas_MeasureSample(t *testing.T) {
 			if tt.result == ResultFailure {
 				alg.limit = 50
 			}
+			initialLimit := int(alg.limit)
 			startTime := time.Now().Add(-tt.rtt)
 
 			limit := alg.MeasureSample(startTime, 0, tt.inflight, tt.result)
 
-			if limit < tt.config.MinimumLimit {
-				t.Errorf("limit %d is below minimum %d", limit, tt.config.MinimumLimit)
+			if limit < 1 {
+				t.Errorf("limit %d is below hard minimum 1", limit)
 			}
 			if limit > tt.config.MaxLimit {
 				t.Errorf("limit %d is above maximum %d", limit, tt.config.MaxLimit)
+			}
+			// High queue or failure should decrease the limit
+			if tt.name == "success with high queue size" || tt.name == "failure with high inflight decreases limit" {
+				if limit >= initialLimit {
+					t.Errorf("expected limit to decrease from %d, got %d", initialLimit, limit)
+				}
 			}
 		})
 	}
@@ -204,5 +211,63 @@ func TestVegas_Smoothing(t *testing.T) {
 	alg := NewVegas(config).(*vegas)
 	if alg.cfg.Smoothing != 0.8 {
 		t.Errorf("expected smoothing 0.8, got %f", alg.cfg.Smoothing)
+	}
+}
+
+func TestVegas_DefaultAlphaBetaThreshold(t *testing.T) {
+	// Default alpha/beta/threshold should follow Netflix's log10-based approach:
+	//   alpha(limit)     = 3 * max(1, floor(log10(limit)))
+	//   beta(limit)      = 6 * max(1, floor(log10(limit)))
+	//   threshold(limit) = max(1, floor(log10(limit)))
+	tests := []struct {
+		limit     int
+		wantAlpha int
+		wantBeta  int
+		wantThres int
+	}{
+		{limit: 10, wantAlpha: 3, wantBeta: 6, wantThres: 1},
+		{limit: 100, wantAlpha: 6, wantBeta: 12, wantThres: 2},
+		{limit: 500, wantAlpha: 6, wantBeta: 12, wantThres: 2},
+		{limit: 1000, wantAlpha: 9, wantBeta: 18, wantThres: 3},
+	}
+
+	alg := NewVegas(VegasConfig{}).(*vegas)
+
+	for _, tt := range tests {
+		if got := alg.cfg.AlphaFunc(tt.limit); got != tt.wantAlpha {
+			t.Errorf("AlphaFunc(%d) = %d, want %d", tt.limit, got, tt.wantAlpha)
+		}
+		if got := alg.cfg.BetaFunc(tt.limit); got != tt.wantBeta {
+			t.Errorf("BetaFunc(%d) = %d, want %d", tt.limit, got, tt.wantBeta)
+		}
+		if got := alg.cfg.ThresholdFunc(tt.limit); got != tt.wantThres {
+			t.Errorf("ThresholdFunc(%d) = %d, want %d", tt.limit, got, tt.wantThres)
+		}
+	}
+}
+
+func TestVegas_DefaultIncreaseDecrease(t *testing.T) {
+	// Default increase/decrease should adjust by log10(limit):
+	//   increase(limit) = limit + max(1, floor(log10(limit)))
+	//   decrease(limit) = limit - max(1, floor(log10(limit)))
+	tests := []struct {
+		limit        float64
+		wantIncrease float64
+		wantDecrease float64
+	}{
+		{limit: 10, wantIncrease: 11, wantDecrease: 9},
+		{limit: 100, wantIncrease: 102, wantDecrease: 98},
+		{limit: 1000, wantIncrease: 1003, wantDecrease: 997},
+	}
+
+	alg := NewVegas(VegasConfig{}).(*vegas)
+
+	for _, tt := range tests {
+		if got := alg.cfg.IncreaseFunc(tt.limit); got != tt.wantIncrease {
+			t.Errorf("IncreaseFunc(%v) = %v, want %v", tt.limit, got, tt.wantIncrease)
+		}
+		if got := alg.cfg.DecreaseFunc(tt.limit); got != tt.wantDecrease {
+			t.Errorf("DecreaseFunc(%v) = %v, want %v", tt.limit, got, tt.wantDecrease)
+		}
 	}
 }

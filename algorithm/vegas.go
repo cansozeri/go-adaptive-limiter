@@ -19,8 +19,12 @@ import (
 //
 //	queue_use = limit - BWE×RttNoLoad = limit × (1 - RttNoLoad/RTTactual)
 //
-// For traditional TCP Vegas alpha is typically 2-3 and beta is typically 4-6.  To allow for better growth and stability
-// at higher limits we set alpha=Max(3, 10% of the current limit) and beta=Max(6, 20% of the current limit).
+// For traditional TCP Vegas alpha is typically 2-3 and beta is typically 4-6.  To allow for better growth and
+// stability at higher limits, the default functions scale with log10 of the current limit:
+//
+//	alpha     = 3 * max(1, floor(log10(limit)))
+//	beta      = 6 * max(1, floor(log10(limit)))
+//	threshold = max(1, floor(log10(limit)))
 type VegasConfig struct {
 	MinimumLimit    int
 	RttNoLoad       time.Duration
@@ -56,7 +60,7 @@ func (c *VegasConfig) defaults() {
 	if c.ProbeMultiplier <= 0 {
 		c.ProbeMultiplier = 30
 	}
-	defaultLogFunc := mathfn.Log10RootFunction(c.MinimumLimit)
+	defaultLogFunc := mathfn.Log10RootFunction(0)
 	if c.AlphaFunc == nil {
 		c.AlphaFunc = func(limit int) int { return 3 * defaultLogFunc(limit) }
 	}
@@ -67,7 +71,7 @@ func (c *VegasConfig) defaults() {
 		c.ThresholdFunc = func(limit int) int { return defaultLogFunc(limit) }
 	}
 
-	defaultLogFloatFunc := mathfn.Log10RootFloatFunction(float64(c.MinimumLimit))
+	defaultLogFloatFunc := mathfn.Log10RootFloatFunction(0)
 	if c.IncreaseFunc == nil {
 		c.IncreaseFunc = func(limit float64) float64 { return limit + defaultLogFloatFunc(limit) }
 	}
