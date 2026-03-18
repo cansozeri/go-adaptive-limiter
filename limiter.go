@@ -1,7 +1,7 @@
 // Package limiter provides adaptive concurrency limiting based on TCP congestion control.
 //
-// Inspired by Netflix's concurrency-limits library and TCP algorithms (AIMD, Vegas),
-// this package dynamically adjusts concurrency limits using Little's Law.
+// Using proven algorithms (AIMD, Vegas) and Little's Law, this package dynamically
+// adjusts concurrency limits based on observed latency and error signals.
 //
 // Basic usage:
 //

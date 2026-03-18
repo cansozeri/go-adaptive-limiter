@@ -55,11 +55,12 @@ func main() {
 
 ### AIMD (Additive Increase, Multiplicative Decrease)
 
-Based on the TCP congestion control algorithm. Increases limit linearly, decreases multiplicatively on congestion.
+Based on the TCP congestion control algorithm. Increases limit linearly when the system is sufficiently utilized (at least 50% of current limit), decreases multiplicatively on congestion or timeout.
 
 ```go
 algorithm.NewAIMD(algorithm.AIMDConfig{
     MinimumLimit:       10,
+    MaxLimit:           200,
     SlowStartThreshold: 50,
     RTTTimeout:         100 * time.Millisecond,
     BackoffRatio:       0.9,
@@ -70,7 +71,7 @@ Best for general-purpose adaptive limiting.
 
 ### Vegas
 
-Based on TCP Vegas. Uses queue delay to detect congestion proactively.
+Based on TCP Vegas. Uses queue delay to detect congestion proactively. Drops always trigger an immediate decrease. Successful samples are only used for adaptation when the system is at least 50% utilized, preventing noisy signals under low load.
 
 ```go
 algorithm.NewVegas(algorithm.VegasConfig{
